@@ -7,7 +7,14 @@ const adminAuth = require("../middleware/authAdmin");
 const { simpleParser } = require("mailparser");
 const execSync = require("child_process").execSync;
 
+// const crypto = require('crypto');
 
+// // Generate a random 64-byte hex string
+// const secretKey = crypto.randomBytes(64).toString('hex');
+// console.log(secretKey);
+
+
+const ADMIN_SECRET_KEY = process.env.ADMIN_SECRET_KEY;
 
 const folderMap = {
   inbox: "INBOX",
@@ -21,30 +28,7 @@ const folderMap = {
 };
 
 // Helper function to compare hashed passwords
-function verifyPassword(inputPassword, storedHash) {
-  // Hash the input password using the same hashing method and compare
-  const inputHash = execSync(`doveadm pw -s SHA512-CRYPT -p '${inputPassword}'`)
-    .toString().trim();
-  return inputHash === storedHash;
-}
 
-// --- 1. List all users ---
-
-// router.get("/admin/list-email-users", (req, res) => {
-//   try {
-//     const data = fs.readFileSync("/etc/dovecot/users", "utf8");
-//     const users = data
-//       .split("\n")
-//       .filter((line) => line.trim() !== "")
-//       .map((line) => {
-//         const email = line.split(":")[0];
-//         return { email };
-//       });
-//     res.json({ users });
-//   } catch (err) {
-//     res.status(500).json({ error: "Failed to read users." });
-//   }
-// });
 
 
 router.get("/admin/list-email-users", (req, res) => {
@@ -175,13 +159,32 @@ router.get("/admin/get-mails", adminAuth, async (req, res) => {
 
 
 router.get("/admin/get-attachment", async (req, res) => {
-  const { email, password, uid, folder = "INBOX", index } = req.query;
+  const { email, uid, folder = "INBOX", index } = req.query;
+  const token = req.headers['authorization']; // Fetch the token from the header
 
-  if (!email || !password || !uid || index === undefined) {
+  console.log("Received parameters:", { email, uid, folder, index });
+
+  if (!email || !uid || index === undefined) {
     return res.status(400).json({ success: false, message: "Missing parameters" });
   }
 
-  // Fetch user data from Dovecot users file
+  // Check if the token exists and is valid (admin authentication)
+  if (!token || !token.startsWith('Bearer ')) {
+    return res.status(401).json({ success: false, message: "Unauthorized" });
+  }
+
+  // Extract token and verify
+  const adminToken = token.split(' ')[1]; // Extract token part from 'Bearer <token>'
+
+  try {
+    const decoded = jwt.verify(adminToken, ADMIN_SECRET_KEY);
+    console.log("Admin authenticated:", decoded);
+  } catch (err) {
+    console.error("Invalid or expired token:", err);
+    return res.status(401).json({ success: false, message: "Unauthorized" });
+  }
+
+  // Fetch user data from Dovecot users file (password check is skipped)
   try {
     const usersData = fs.readFileSync("/etc/dovecot/users", "utf8");
     const users = usersData.split("\n").filter(line => line.trim() !== "");
@@ -192,23 +195,13 @@ router.get("/admin/get-attachment", async (req, res) => {
       return res.status(404).json({ success: false, message: "User not found" });
     }
 
-    // Extract the password hash for comparison
-    const storedHash = user.split(":")[1];
-
-    // Verify the entered password matches the stored hash
-    const inputHash = execSync(`doveadm pw -s SHA512-CRYPT -p '${password}'`).toString().trim();
-    if (inputHash !== storedHash) {
-      return res.status(401).json({ success: false, message: "Authentication failed" });
-    }
-
-
     // Proceed to fetch attachments after successful authentication
     const box = folderMap[folder.toLowerCase()] || "INBOX";
 
     const config = {
       imap: {
         user: email,
-        password,
+        password: '', // Password is skipped, as we are authenticating admin
         host: "mail.sharda.co.in",
         port: 993,
         tls: true,
@@ -219,6 +212,7 @@ router.get("/admin/get-attachment", async (req, res) => {
 
     let connection;
     try {
+      console.log("Connecting to IMAP server...");
       connection = await imap.connect(config);
       await connection.openBox(box);
 
