@@ -4,27 +4,64 @@ const router = express.Router();
 const fs = require("fs");
 const imap = require("imap-simple");
 const adminAuth = require("../middleware/authAdmin");
-const Imap = require('node-imap');
 const { simpleParser } = require("mailparser");
+const execSync = require("child_process").execSync;
+
+
+
+const folderMap = {
+  inbox: "INBOX",
+  sent: "Sent",
+  drafts: "Drafts",
+  trash: "Trash",
+  archived: "Archive",
+  star: "INBOX",
+  social: "INBOX",
+  promotions: "INBOX",
+};
+
+// Helper function to compare hashed passwords
+function verifyPassword(inputPassword, storedHash) {
+  // Hash the input password using the same hashing method and compare
+  const inputHash = execSync(`doveadm pw -s SHA512-CRYPT -p '${inputPassword}'`)
+    .toString().trim();
+  return inputHash === storedHash;
+}
 
 // --- 1. List all users ---
+
+// router.get("/admin/list-email-users", (req, res) => {
+//   try {
+//     const data = fs.readFileSync("/etc/dovecot/users", "utf8");
+//     const users = data
+//       .split("\n")
+//       .filter((line) => line.trim() !== "")
+//       .map((line) => {
+//         const email = line.split(":")[0];
+//         return { email };
+//       });
+//     res.json({ users });
+//   } catch (err) {
+//     res.status(500).json({ error: "Failed to read users." });
+//   }
+// });
+
 
 router.get("/admin/list-email-users", (req, res) => {
   try {
     const data = fs.readFileSync("/etc/dovecot/users", "utf8");
     const users = data
       .split("\n")
-      .filter((line) => line.trim() !== "")
+      .filter((line) => line.trim() !== "") // Remove empty lines
       .map((line) => {
-        const email = line.split(":")[0];
-        return { email };
+        const [email, password] = line.split(":"); // Split email and password
+        return { email, password }; // Include both email and password
       });
-    res.json({ users });
+    res.json({ users }); // Return both email and password
   } catch (err) {
     res.status(500).json({ error: "Failed to read users." });
   }
 });
-
 
 // --- 3. Get all mails for any user (admin) ---
 router.get("/admin/get-mails", adminAuth, async (req, res) => {
@@ -133,6 +170,85 @@ router.get("/admin/get-mails", adminAuth, async (req, res) => {
     }
     console.error(err);
     return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+
+router.get("/admin/get-attachment", async (req, res) => {
+  const { email, password, uid, folder = "INBOX", index } = req.query;
+
+  if (!email || !password || !uid || index === undefined) {
+    return res.status(400).json({ success: false, message: "Missing parameters" });
+  }
+
+  // Fetch user data from Dovecot users file
+  try {
+    const usersData = fs.readFileSync("/etc/dovecot/users", "utf8");
+    const users = usersData.split("\n").filter(line => line.trim() !== "");
+
+    // Find the user entry for the given email
+    const user = users.find(line => line.split(":")[0] === email);
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    // Extract the password hash for comparison
+    const storedHash = user.split(":")[1];
+
+    // Verify the entered password matches the stored hash
+    const inputHash = execSync(`doveadm pw -s SHA512-CRYPT -p '${password}'`).toString().trim();
+    if (inputHash !== storedHash) {
+      return res.status(401).json({ success: false, message: "Authentication failed" });
+    }
+
+
+    // Proceed to fetch attachments after successful authentication
+    const box = folderMap[folder.toLowerCase()] || "INBOX";
+
+    const config = {
+      imap: {
+        user: email,
+        password,
+        host: "mail.sharda.co.in",
+        port: 993,
+        tls: true,
+        authTimeout: 5000,
+        tlsOptions: { rejectUnauthorized: false },
+      },
+    };
+
+    let connection;
+    try {
+      connection = await imap.connect(config);
+      await connection.openBox(box);
+
+      const allMessages = await connection.search(['ALL'], { bodies: [''], struct: true });
+      const message = allMessages.find(msg => msg.attributes.uid == uid);
+
+      if (!message) {
+        return res.status(404).json({ success: false, message: "Mail not found" });
+      }
+
+      const raw = message.parts[0].body;
+      const parsed = await simpleParser(raw);
+
+      const att = parsed.attachments[parseInt(index)];
+      if (!att) {
+        return res.status(404).json({ success: false, message: "Attachment not found" });
+      }
+
+      res.setHeader("Content-Type", att.contentType || "application/octet-stream");
+      res.setHeader("Content-Disposition", `attachment; filename="${att.filename}"`);
+      res.send(att.content);
+
+      await connection.end();
+    } catch (err) {
+      if (connection) await connection.end();
+      console.error(err);
+      return res.status(500).json({ success: false, error: err.message });
+    }
+  } catch (err) {
+    return res.status(500).json({ success: false, error: "Failed to read users file" });
   }
 });
 module.exports = router;
