@@ -29,5 +29,6 @@ jobs:
           key: ${{ secrets.SSH_KEY }}
           script: |
             cd /home/mailbackend
-            npm install --production
+            rm -rf node_modules package-lock.json
+            npm install 
             pm2 restart mailbackend || pm2 start server.js --name mailbackend
