@@ -2,10 +2,12 @@ const express = require('express');
 const mongoose = require('mongoose');
 require('dotenv').config();
 const emailuser = require('./Routes/emailUser');
+const cors = require('cors');
 
 const app = express();
 
 app.use(express.json());
+app.use(cors());
 
 
 app.use('/api/email', emailuser);
