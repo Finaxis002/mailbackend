@@ -2,6 +2,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 require('dotenv').config();
 const emailuser = require('./Routes/emailUser');
+const adminmail = require('./Routes/adminMailApi')
 const cors = require('cors');
 
 const app = express();
@@ -11,6 +12,7 @@ app.use(cors());
 
 
 app.use('/api/email', emailuser);
+app.use('/api/email', adminmail);
 
 mongoose.connect(process.env.MONGO_URI || 'mongodb+srv://finaxisai:YuRle5xEThDYf8sV@cluster0.dagsoxh.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0', {
   useNewUrlParser: true,
@@ -27,7 +29,7 @@ mongoose.connection.on('error', (err) => {
 
 
 app.get('/', (req, res) => {
-  res.send('API Running! -> CI/CD testing cors added');
+  res.send('API Running! -> admin mail api added');
 });
 
 const PORT = process.env.PORT || 5879;
