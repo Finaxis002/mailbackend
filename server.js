@@ -27,7 +27,7 @@ mongoose.connection.on('error', (err) => {
 
 
 app.get('/', (req, res) => {
-  res.send('API Running! -> CI/CD testing @@@@@@');
+  res.send('API Running! -> CI/CD testing cors added');
 });
 
 const PORT = process.env.PORT || 5879;
