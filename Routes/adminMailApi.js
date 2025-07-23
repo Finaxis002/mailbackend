@@ -13,8 +13,17 @@ const execSync = require("child_process").execSync;
 // const secretKey = crypto.randomBytes(64).toString('hex');
 // console.log(secretKey);
 
+// const ADMIN_SECRET_KEY = process.env.ADMIN_SECRET_KEY; // Stored securely
+// const adminPayload = {
+//   role: 'admin',
+//   email: 'admin@sharda.co.in'
+// };
 
-const ADMIN_SECRET_KEY = process.env.ADMIN_SECRET_KEY;
+// const adminToken = jwt.sign(adminPayload, ADMIN_SECRET_KEY, { expiresIn: '1h' });
+
+// console.log(adminToken);
+
+
 
 const folderMap = {
   inbox: "INBOX",

@@ -8,7 +8,11 @@ const cors = require('cors');
 const app = express();
 
 app.use(express.json());
-app.use(cors());
+app.use(cors({
+  origin: 'https://mailbox.sharda.co.in',
+  credentials: true, // Only add this if you need to send cookies
+}));
+
 
 
 app.use('/api/email', emailuser);
